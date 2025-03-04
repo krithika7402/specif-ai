@@ -16,6 +16,7 @@ import { ButtonComponent } from '../../components/core/button/button.component';
 import { ErrorMessageComponent } from '../../components/core/error-message/error-message.component';
 import { environment } from '../../../environments/environment';
 import { NgIf } from '@angular/common';
+import { SsoButtonsComponent } from 'src/app/components/sso/sso-buttons.component';
 
 @Component({
   selector: 'app-login',
@@ -28,6 +29,7 @@ import { NgIf } from '@angular/common';
     ReactiveFormsModule,
     ButtonComponent,
     ErrorMessageComponent,
+    SsoButtonsComponent
   ],
 })
 export class LoginComponent implements OnInit {

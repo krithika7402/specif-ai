@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   once: (channel, listener) => ipcRenderer.once(channel, listener),
   removeListener: (channel, listener) =>
     ipcRenderer.removeListener(channel, listener),
+  initiateSSO: (provider) => ipcRenderer.invoke("sso:initiate", provider),
 });

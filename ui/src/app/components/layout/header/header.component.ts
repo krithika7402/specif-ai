@@ -9,6 +9,7 @@ import { BreadcrumbsComponent } from '../../core/breadcrumbs/breadcrumbs.compone
 import { AsyncPipe, NgIf } from '@angular/common';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { heroCog8Tooth } from '@ng-icons/heroicons/outline';
+import { SsoService } from 'src/app/services/sso/sso.service';
 
 @Component({
   selector: 'app-header',
@@ -25,7 +26,17 @@ import { heroCog8Tooth } from '@ng-icons/heroicons/outline';
   ],
   viewProviders: [provideIcons({ heroCog8Tooth })],
 })
+
 export class HeaderComponent {
+  userName: string | null = null;
+
+  constructor(private ssoService: SsoService) {}
+
+  ngOnInit(): void {
+    this.ssoService.getUserCredentials('github').then((credentials: { name: string }) => {
+      this.userName = credentials.name;
+    });
+  }
   protected themeConfiguration = environment.ThemeConfiguration;
 
   authService = inject(AuthService);

@@ -126,6 +126,8 @@ function createWindow() {
   });
 }
 
+const ssoManager = require("./sso/sso-manager");
+
 app.whenReady().then(() => {
   createWindow();
 
@@ -184,7 +186,7 @@ app.whenReady().then(() => {
 
       authServer.listen(port, () => {
         console.debug(
-          `OAuth callback server listening on http://localhost:${port}/callback`,
+          `OAuth callback server listening on http://localhost:${port}/callback`
         );
         mainWindow.webContents.send("server-started");
       });
@@ -291,19 +293,32 @@ app.whenReady().then(() => {
   });
 
   authServer.get("/callback", async (req, res) => {
-    const authorizationCode = req.query.code;
-    try {
-      const authResponse = await exchangeToken(
-        "authorization_code",
-        authorizationCode,
-      );
-      mainWindow.webContents.send("oauth-reply", authResponse);
-      res.send("Authentication successful. You can close this tab.");
-    } catch (error) {
-      console.error(
-        "Error exchanging authorization code for access token.",
-      );
-      res.status(500).send("Authentication failed.");
+    const { code, state } = req.query;
+
+    if (state) {
+      // Handle SSO callback
+      try {
+        const authResponse = await ssoManager.handleCallback({ code, state });
+        mainWindow.webContents.send("sso-reply", authResponse);
+        res.send("SSO Authentication successful. You can close this tab.");
+      } catch (error) {
+        console.error("Error handling SSO callback:", error);
+        res.status(500).send("SSO Authentication failed.");
+      }
+    } else {
+      // Handle Jira callback
+      const authorizationCode = req.query.code;
+      try {
+        const authResponse = await exchangeToken(
+          "authorization_code",
+          authorizationCode
+        );
+        mainWindow.webContents.send("oauth-reply", authResponse);
+        res.send("Authentication successful. You can close this tab.");
+      } catch (error) {
+        console.error("Error exchanging authorization code for access token.");
+        res.status(500).send("Authentication failed.");
+      }
     }
   });
 
