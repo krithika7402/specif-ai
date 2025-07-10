@@ -5,6 +5,7 @@ import {
   ToolMessage,
 } from "@langchain/core/messages";
 import { tool } from "@langchain/core/tools";
+import { v4 as uuidv4 } from "uuid";
 import { MemorySaver } from "@langchain/langgraph-checkpoint";
 import { IpcMainInvokeEvent } from "electron/main";
 import { buildReactAgent } from "../../agentic/react-agent";
@@ -13,6 +14,7 @@ import { chatWithAIPrompt } from "../../prompts/core/chat-with-ai";
 import {
   ChatWithAIParams,
   ChatWithAISchema,
+  UCParams,
 } from "../../schema/core/chat-with-ai.schema";
 import { buildLangchainModelProvider } from "../../services/llm/llm-langchain";
 import { LLMConfigModel } from "../../services/llm/llm-types";
@@ -22,6 +24,7 @@ import { z } from "zod";
 import { APP_MESSAGES } from '../../constants/message.constants';
 import { GuardrailsShouldBlock, validateGuardrails } from "../../guardrails";
 import { isLangfuseDetailedTracesEnabled } from '../../services/observability/observability.util';
+import { getUCPrompt } from "../../prompts/core/usecase";
 
 // Message type mapping
 const MESSAGE_TYPES = {
@@ -98,11 +101,18 @@ export const chatWithAI = async (_: IpcMainInvokeEvent, data: unknown) => {
         requestId: validatedData.requestId,
         sendMessagesInTelemetry: isLangfuseDetailedTracesEnabled(),
       },
+      recursionLimit: 50,
     };
 
     const messages = transformToLangchainMessages(validatedData.chatHistory);
+    const prompt = new SystemMessage(
+      validatedData.requirementAbbr === "UC"
+        ? getUCPrompt(validatedData as UCParams)
+        : chatWithAIPrompt(validatedData)
+    );
+
     const allMessages = [
-      new SystemMessage(chatWithAIPrompt(validatedData)),
+      prompt,
       ...messages,
     ];
 
@@ -180,31 +190,91 @@ export const chatWithAI = async (_: IpcMainInvokeEvent, data: unknown) => {
 };
 
 const buildToolsForRequirement = async (data: ChatWithAIParams) => {
+  // Cache for the current document content
+  let latestContent = data.requirement.description;
+
+  // Tool to get the current requirement content
   const getCurrentRequirementContent = tool(
     () => {
-      return data.requirement.description;
+      console.log("[getCurrentRequirementContent] Returning latest content");
+      return latestContent;
     },
     {
       name: "get_current_requirement_content",
-      description: "Get current requirement content",
+      description: "Get current requirement content. Always use this tool first before attempting to update the document to ensure you're working with the latest content.",
     }
   );
+  
+  // Define the text block replace tool schema
+  const textBlockReplaceSchema = z.object({
+    searchBlock: z.string().describe("The exact text block to search for in the document"),
+    replaceBlock: z.string().describe("The text block to replace the search block with")
+  });
 
-  const addToRequirementDescription = tool(
-    ({ }: { contentToAdd: string }): string => {
-      return "Tool called successfully, The user is notified that you've suggested adding content to the description";
+  // Tool for replacing a specific text block in the document
+  const replaceTextBlock = tool(
+    async (input: z.infer<typeof textBlockReplaceSchema>) => {
+      const { searchBlock, replaceBlock } = input;
+      
+      if (!searchBlock) {
+        return JSON.stringify({
+          success: false,
+          error: "searchBlock is required"
+        });
+      }
+
+      // Update the cached content
+      if (latestContent && latestContent.includes(searchBlock)) {
+        latestContent = latestContent.replace(searchBlock, replaceBlock);
+      } else {
+        return JSON.stringify({
+          success: false,
+          error: "Search block not found in the document"
+        });
+      }
+
+      const requestId = uuidv4();
+      const documentId = data.requirement.title || "current-document";
+
+      // Create the update request
+      const updateRequest = {
+        requestId,
+        documentId,
+        updateType: "text_block_replace",
+        searchBlock,
+        replaceBlock
+      };
+
+      // Return the update request details
+      return JSON.stringify({
+        success: true,
+        message: `Text block replace request created. Replacing specific text block with new content.`,
+        updateRequest
+      });
     },
     {
-      name: "add_to_requirement_description",
-      description: "Suggest adding content to the current requirement description",
-      schema: z.object({
-        contentToAdd: z.string()
-      })
+      name: "replace_text_block",
+      description: `
+        Purpose: Update specific sections of the document by replacing exact text blocks
+        When to use: 
+        - When you need to update a specific paragraph, section, or code block
+        - When you want to preserve the exact formatting and structure of surrounding content
+        - For precise replacements that maintain document integrity
+        
+        Best practices:
+        - Always get the current document content first using get_current_requirement_content
+        - Provide the exact text block to search for (copy it precisely from the document)
+        - Ensure the replacement text fits contextually with surrounding content
+        - For large documents, focus on replacing one section at a time
+      `,
+      schema: textBlockReplaceSchema,
     }
   );
 
-  const tools = [getCurrentRequirementContent, addToRequirementDescription];
+  // Only return the two essential tools as requested
+  const tools = [getCurrentRequirementContent, replaceTextBlock];
 
+  // Add requirement-specific tools based on requirement type
   switch (data.requirementAbbr) {
     case "BP": {
       const getLinkedBRDs = tool(
@@ -259,27 +329,31 @@ const buildToolsForRequirement = async (data: ChatWithAIParams) => {
       break;
     }
     case "TASK": {
-      const getLinkedUS = tool(
-        () => {
-          return data.userStory;
-        },
-        {
-          name: "get_linked_us",
-          description: "Get linked US",
-        }
-      );
+      if ('userStory' in data) {
+        const getLinkedUS = tool(
+          () => {
+            return data.userStory;
+          },
+          {
+            name: "get_linked_us",
+            description: "Get linked US",
+          }
+        );
+        tools.push(getLinkedUS);
+      }
 
-      const getLinkedPRD = tool(
-        () => {
-          return data.prd;
-        },
-        {
-          name: "get_linked_prd",
-          description: "Get linked PRD",
-        }
-      );
-
-      tools.push(getLinkedUS, getLinkedPRD);
+      if ('prd' in data) {
+        const getLinkedPRD = tool(
+          () => {
+            return data.prd;
+          },
+          {
+            name: "get_linked_prd",
+            description: "Get linked PRD",
+          }
+        );
+        tools.push(getLinkedPRD);
+      }
       break;
     }
   }

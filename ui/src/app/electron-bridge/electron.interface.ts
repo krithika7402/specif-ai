@@ -34,6 +34,32 @@ import {
 } from 'src/app/model/interfaces/IUserStory';
 import { WorkflowType } from '../model/interfaces/workflow-progress.interface';
 
+/**
+ * Interface for document update requests
+ */
+export interface DocumentUpdateRequest {
+  requestId: string;
+  documentId: string;
+  updateType: 'text_block_replace';
+  searchBlock: string;
+  replaceBlock: string;
+}
+
+/**
+ * Interface for document update responses
+ */
+export interface DocumentUpdateResponse {
+  requestId: string;
+  documentId: string;
+  updateType: 'text_block_replace';
+  success: boolean;
+  error?: string;
+  changes?: {
+    searchBlock: string;
+    replaceBlock: string;
+  };
+}
+
 export interface ElectronAPI {
   openFile: () => Promise<string[]>;
   saveFile: (fileContent: any, filePath: string) => Promise<void>;
@@ -101,6 +127,9 @@ export interface ElectronAPI {
   removeFullscreenListener: () => void;
   getFullscreenState: () => Promise<boolean>;
   getPlatform: () => string;
+
+  // Document Update Methods
+  updateDocument(request: DocumentUpdateRequest): Promise<DocumentUpdateResponse>;
 
   // Content Generation Process Management
   setContentGenerationStatus(

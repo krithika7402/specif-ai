@@ -47,6 +47,9 @@ import {
 import { AutoUpdateModalComponent } from '../components/auto-update-modal/auto-update-modal.component';
 import { htmlToMarkdown } from '../utils/html.utils';
 import { WorkflowType } from '../model/interfaces/workflow-progress.interface';
+import { IAddUseCaseRequest, IUpdateUseCaseRequest, IUseCaseResponse } from '../model/interfaces/IUseCase';
+import { DocumentUpdateRequest, DocumentUpdateResponse } from './electron.interface';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable({
   providedIn: 'root',
@@ -319,6 +322,60 @@ export class ElectronService {
     }
     throw new Error('Electron is not available');
   }
+
+  async addUseCase(
+    request: IAddUseCaseRequest,
+  ): Promise<IUseCaseResponse> {
+    if (this.electronAPI) {
+      return this.ipc.request({
+        channel: 'usecase:add',
+        args: [request],
+      });
+    }
+    throw new Error('Electron is not available');
+  }
+
+  async updateUseCase(
+    request: IUpdateUseCaseRequest,
+  ): Promise<IUseCaseResponse> {
+    if (this.electronAPI) {
+      return this.ipc.request({
+        channel: 'usecase:update',
+        args: [request],
+      });
+    }
+    throw new Error('Electron is not available');
+  }
+
+  async generateUseCase(
+    request: any,
+  ): Promise<{title: string; requirement: string; status: string}> {
+    if (this.electronAPI) {
+      return this.ipc.request({
+        channel: 'usecase:generate',
+        args: [request],
+        skipLoading: true
+      });
+    }
+    throw new Error('Electron is not available');
+  }
+
+  /**
+   * Update a document with search and replace or range replace
+   * @param request The document update request
+   * @returns The document update response
+   */
+  async updateDocument(request: DocumentUpdateRequest): Promise<DocumentUpdateResponse> {
+    if (this.electronAPI) {
+      return this.ipc.request({
+        channel: 'core:updateDocument',
+        args: [request],
+        skipLoading: true
+      });
+    }
+    throw new Error('Electron is not available');
+  }
+
 
   async addUserStory(
     request: IUpdateUserStoryRequest,
